@@ -1,0 +1,108 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "smarthome": {
+      ".read": true,
+      "controls": {
+        "led1": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "led2": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "fan": {
+          ".read": true,
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "sensors": {
+        "temperature": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= -40 && newData.val() <= 85"
+        },
+        "humidity": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+        },
+        "gas_ppm": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 10000"
+        },
+        "fire": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "alerts": {
+        "temp_low": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "temp_high": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "hum_low": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "hum_high": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "gas_alert": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "fire_alert": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "status": {
+        "boot_ms": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "ip": {
+          ".write": true,
+          ".validate": "newData.isString() && newData.val().length <= 45"
+        },
+        "firmware": {
+          ".write": true,
+          ".validate": "newData.isString() && newData.val().length <= 64"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "voice": {
+        "last_command": {
+          ".write": true,
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "$other": {
+        ".validate": false
+      }
+    }
+  }
+}

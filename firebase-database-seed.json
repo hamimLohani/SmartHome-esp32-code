@@ -1,0 +1,31 @@
+{
+  "smarthome": {
+    "controls": {
+      "led1": false,
+      "led2": false,
+      "fan": false
+    },
+    "sensors": {
+      "temperature": 0,
+      "humidity": 0,
+      "gas_ppm": -1,
+      "fire": false
+    },
+    "alerts": {
+      "temp_low": false,
+      "temp_high": false,
+      "hum_low": false,
+      "hum_high": false,
+      "gas_alert": false,
+      "fire_alert": false
+    },
+    "voice": {
+      "last_command": ""
+    },
+    "status": {
+      "boot_ms": 0,
+      "ip": "",
+      "firmware": "SmartHome-1.0.0"
+    }
+  }
+}

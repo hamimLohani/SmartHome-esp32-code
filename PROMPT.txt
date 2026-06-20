@@ -1,0 +1,228 @@
+Write complete Arduino IDE firmware for a YD-ESP32-S3 (ESP32-S3-WROOM)
+smart home system. The code must be a single .ino file, fully working,
+with no placeholder comments — every function must be implemented.
+
+════════════════════════════════════════
+BOARD
+════════════════════════════════════════
+Board: YD-ESP32-S3 N16R8 (16MB Flash, 8MB PSRAM)
+Framework: Arduino (ESP32 Arduino Core)
+Partition scheme: Huge APP (required for ESP-SR)
+Use FreeRTOS tasks for all concurrent operations.
+
+════════════════════════════════════════
+LIBRARIES
+════════════════════════════════════════
+- DHT sensor library by Adafruit
+- Firebase ESP Client by Mobizt (FirebaseESP32)
+- U8g2 by olikraus (for I2C display)
+- driver/i2s.h (built-in ESP-IDF, for INMP441 mic)
+- ESP-SR by Espressif (wake word + command recognition)
+
+════════════════════════════════════════
+CREDENTIALS — replace with real values
+════════════════════════════════════════
+#define WIFI_SSID      "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD  "YOUR_WIFI_PASSWORD"
+#define FIREBASE_HOST  "YOUR_PROJECT.firebaseio.com"
+#define FIREBASE_AUTH  "YOUR_DATABASE_SECRET"
+
+════════════════════════════════════════
+PIN DEFINITIONS — DO NOT CHANGE ANY OF THESE
+════════════════════════════════════════
+
+// Power (for reference only — no pinMode needed)
+// 3V3 → DHT11, MQ2, Fire sensor, I2C display, INMP441 VDD
+// 5V0 → Relay module VCC
+// GND → All module GNDs on a common rail
+
+// Sensors
+#define PIN_DHT11        4    // 1-Wire. 4.7kΩ pull-up to 3.3V
+#define PIN_MQ2          5    // ADC1_CH4. Voltage divider: 10kΩ+20kΩ (5V→3.3V)
+#define PIN_FIRE         6    // Digital IN. INPUT_PULLUP. Active LOW = fire detected
+
+// I2C display
+#define PIN_SDA          8    // I2C SDA
+#define PIN_SCL          9    // I2C SCL
+
+// I2S microphone INMP441
+#define PIN_I2S_BCK     15    // Bit clock
+#define PIN_I2S_WS      16    // Word select (LRCK)
+#define PIN_I2S_SD      17    // Serial data in
+// INMP441 L/R pin → GND (left mono channel)
+
+// Relay channels — active LOW — HIGH = OFF, LOW = ON
+#define PIN_RELAY_LED1  10    // Relay IN1 → AC LED 1
+#define PIN_RELAY_LED2  11    // Relay IN2 → AC LED 2
+#define PIN_RELAY_FAN   12    // Relay IN3 → AC Fan
+
+// Temperature out-of-range indicator LEDs
+#define PIN_TEMP_LOW    13    // Blue LED. ON when temp < 20°C
+#define PIN_TEMP_HIGH   14    // Red LED.  ON when temp > 40°C
+
+// Temperature bar graph — 10 LEDs — thresholds 20°C to 38°C step 2°C
+#define PIN_TBAR_1      18    // 20°C
+#define PIN_TBAR_2      21    // 22°C
+#define PIN_TBAR_3      38    // 24°C
+#define PIN_TBAR_4      39    // 26°C
+#define PIN_TBAR_5      40    // 28°C
+#define PIN_TBAR_6      41    // 30°C
+#define PIN_TBAR_7      42    // 32°C
+#define PIN_TBAR_8       1    // 34°C
+#define PIN_TBAR_9       2    // 36°C
+#define PIN_TBAR_10      3    // 38°C
+
+// Humidity out-of-range indicator LEDs
+#define PIN_HUM_LOW     35    // Blue LED. ON when humidity < 60%
+#define PIN_HUM_HIGH    36    // Red LED.  ON when humidity > 80%
+
+// Humidity bar graph — 5 LEDs — thresholds 60% to 76% step 4%
+#define PIN_HBAR_1      37    // 60%
+#define PIN_HBAR_2      47    // 64%
+#define PIN_HBAR_3      48    // 68%
+#define PIN_HBAR_4       7    // 72%
+#define PIN_HBAR_5      33    // 76%
+
+// NEVER USE: GPIO 0, 19, 20, 43, 44, 45, 46
+// (boot straps, USB D+/D-, UART0 TX/RX)
+
+════════════════════════════════════════
+FIREBASE REALTIME DATABASE STRUCTURE
+════════════════════════════════════════
+/smarthome/controls/led1        → bool   (dashboard → ESP32)
+/smarthome/controls/led2        → bool   (dashboard → ESP32)
+/smarthome/controls/fan         → bool   (dashboard → ESP32)
+/smarthome/sensors/temperature  → float  (ESP32 → dashboard)
+/smarthome/sensors/humidity     → float  (ESP32 → dashboard)
+/smarthome/sensors/gas_ppm      → int    (ESP32 → dashboard)
+/smarthome/sensors/fire         → bool   (ESP32 → dashboard)
+/smarthome/alerts/temp_low      → bool   (ESP32 → dashboard)
+/smarthome/alerts/temp_high     → bool   (ESP32 → dashboard)
+/smarthome/alerts/hum_low       → bool   (ESP32 → dashboard)
+/smarthome/alerts/hum_high      → bool   (ESP32 → dashboard)
+/smarthome/alerts/gas_alert     → bool   (ESP32 → dashboard)
+/smarthome/alerts/fire_alert    → bool   (ESP32 → dashboard)
+/smarthome/voice/last_command   → String (ESP32 → dashboard)
+
+════════════════════════════════════════
+SETUP() — strict order
+════════════════════════════════════════
+1. Set relay pins OUTPUT and immediately HIGH (loads OFF before anything else):
+   pinMode(PIN_RELAY_LED1, OUTPUT); digitalWrite(PIN_RELAY_LED1, HIGH);
+   pinMode(PIN_RELAY_LED2, OUTPUT); digitalWrite(PIN_RELAY_LED2, HIGH);
+   pinMode(PIN_RELAY_FAN,  OUTPUT); digitalWrite(PIN_RELAY_FAN,  HIGH);
+
+2. Set all indicator and bar LED pins OUTPUT LOW.
+
+3. Set fire sensor pin INPUT_PULLUP.
+
+4. Serial.begin(115200).
+
+5. Initialize DHT11 (dht.begin()).
+
+6. Connect WiFi with retry loop (max 20 attempts, 500ms apart).
+   If WiFi fails, continue anyway — local functions must still work.
+
+7. Initialize Firebase (config + auth).
+
+8. Initialize I2C display: Wire.begin(PIN_SDA, PIN_SCL).
+   Use U8g2 with SSD1306 128x64 I2C driver.
+
+9. Initialize I2S driver for INMP441:
+   i2s_config_t: sample_rate=16000, bits=32, mono, I2S_NUM_0
+   pins: bck=PIN_I2S_BCK, ws=PIN_I2S_WS, data_in=PIN_I2S_SD
+
+10. Initialize ESP-SR:
+    Wake word model: wn9_hilexin (built-in "Hi Lexin")
+    Command model: add these commands:
+      "light one on"   → command ID 1
+      "light one off"  → command ID 2
+      "light two on"   → command ID 3
+      "light two off"  → command ID 4
+      "fan on"         → command ID 5
+      "fan off"        → command ID 6
+      "all off"        → command ID 7
+
+11. Launch all 5 FreeRTOS tasks (see below).
+
+════════════════════════════════════════
+FREERTOS TASKS
+════════════════════════════════════════
+
+── TASK 1: sensorTask ──────────────────
+Stack: 4096 · Priority: 2 · Core: 1
+Runs every 2000ms.
+  a. Read DHT11 → float temperature, float humidity.
+     If read fails, skip this cycle and log to Serial.
+  b. Read MQ2 analog: int raw = analogRead(PIN_MQ2)
+     Map raw 0–4095 to gas_ppm 0–10000.
+     For first 60 seconds after boot show gas_ppm = -1
+     (warm-up period — skip gas alerts during this time).
+  c. Read fire sensor: bool fire = (digitalRead(PIN_FIRE) == LOW)
+  d. Call updateTempLEDs(temperature).
+  e. Call updateHumidityLEDs(humidity).
+  f. Push to Firebase:
+       /sensors/temperature, /sensors/humidity,
+       /sensors/gas_ppm, /sensors/fire
+       /alerts/temp_low, /alerts/temp_high,
+       /alerts/hum_low, /alerts/hum_high,
+       /alerts/gas_alert (true if gas_ppm > 800 and warm-up done),
+       /alerts/fire_alert (true if fire == true)
+  g. If WiFi is disconnected, skip Firebase push silently.
+
+── TASK 2: firebaseListenerTask ────────
+Stack: 4096 · Priority: 2 · Core: 1
+Runs every 500ms.
+  Read /smarthome/controls/led1 → setRelay(PIN_RELAY_LED1, value)
+  Read /smarthome/controls/led2 → setRelay(PIN_RELAY_LED2, value)
+  Read /smarthome/controls/fan  → setRelay(PIN_RELAY_FAN,  value)
+  If WiFi disconnected, skip silently.
+
+── TASK 3: safetyTask ──────────────────
+Stack: 2048 · Priority: 4 (HIGHEST) · Core: 0
+Runs every 500ms. This task is FULLY LOCAL — no Firebase dependency.
+  a. Read fire pin directly: bool fire = (digitalRead(PIN_FIRE) == LOW)
+  b. Read gas: int raw = analogRead(PIN_MQ2) → ppm
+  c. If fire == true OR ppm > 800 (and warm-up done):
+       → digitalWrite(PIN_RELAY_LED1, HIGH)  // cut all AC loads
+       → digitalWrite(PIN_RELAY_LED2, HIGH)
+       → digitalWrite(PIN_RELAY_FAN,  HIGH)
+       → Flash PIN_TEMP_HIGH rapidly (100ms blink loop x5)
+       → Set global flag: bool safetyTriggered = true
+  d. If safetyTriggered == true, do NOT allow firebaseListenerTask
+     to re-enable any relay until the flag is manually cleared
+     (only cleared by board reset).
+
+── TASK 4: displayTask ─────────────────
+Stack: 4096 · Priority: 1 · Core: 1
+Runs every 1000ms. Updates U8g2 I2C display.
+  Normal mode — 4 lines:
+    Line 1: "Temp:  XX.X C"
+    Line 2: "Hum:   XX %"
+    Line 3: "Gas:   XXXX ppm"  (show "Warming..." if warm-up)
+    Line 4: "Status: OK"       (or "FIRE!" / "GAS!" / "No WiFi")
+  Alert mode — if fire or gas alert:
+    Fill screen with blinking "!! ALERT !!" text.
+
+── TASK 5: voiceTask ───────────────────
+Stack: 8192 · Priority: 3 · Core: 0
+Continuously captures I2S audio from INMP441.
+  a. Read I2S buffer (32-bit samples, downscale to 16-bit for ESP-SR).
+  b. Feed audio to ESP-SR wake word detector (wn9_hilexin).
+  c. On wake word detected:
+       → Flash both indicator LEDs once (200ms) as audio feedback.
+       → Switch ESP-SR to command recognition mode.
+       → Listen for up to 5 seconds for a command.
+  d. On command recognized:
+       ID 1 "light one on"  → Firebase /controls/led1 = true
+       ID 2 "light one off" → Firebase /controls/led1 = false
+       ID 3 "light two on"  → Firebase /controls/led2 = true
+       ID 4 "light two off" → Firebase /controls/led2 = false
+       ID 5 "fan on"        → Firebase /controls/fan  = true
+       ID 6 "fan off"       → Firebase /controls/fan  = false
+       ID 7 "all off"       → Firebase /controls/led1, led2, fan = false
+       → Write command string to Firebase /voice/last_command
+       → If safetyTriggered == true, ignore all "on" commands.
+  e. Return to wake word detection mode.
+
+═════
