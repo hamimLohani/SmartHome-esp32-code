@@ -154,6 +154,7 @@ void readDhtSensor() {
   if (firebaseReady()) {
     Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/temperature"), currentTemperature);
     Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity);
+    Firebase.RTDB.setTimestamp(&fbdo, dbPath("/status/last_updated"));
   }
 }
 

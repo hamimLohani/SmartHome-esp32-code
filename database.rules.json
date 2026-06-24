@@ -87,6 +87,10 @@
           ".write": true,
           ".validate": "newData.isString() && newData.val().length <= 64"
         },
+        "last_updated": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
         "$other": {
           ".validate": false
         }
