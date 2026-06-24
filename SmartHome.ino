@@ -5,8 +5,10 @@
 #include <LiquidCrystal_I2C.h>
 #include <Firebase_ESP_Client.h>
 
-#define WIFI_SSID      "Black Box"
-#define WIFI_PASSWORD  "boltechitham"
+// #define WIFI_SSID      "Black Box"
+// #define WIFI_PASSWORD  "boltechitham"
+#define WIFI_SSID      "Tp Link 2.4 GHz"
+#define WIFI_PASSWORD  "flat_6b@"
 #define FIREBASE_HOST  "smart-home-122-default-rtdb.firebaseio.com"
 #define FIREBASE_AUTH  "mFawsZRgC0dEaQE1VcIyBQeTHV1TVzZlmnNF448Q"
 
@@ -152,9 +154,17 @@ void readDhtSensor() {
   Serial.println(" %");
 
   if (firebaseReady()) {
-    Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/temperature"), currentTemperature);
-    Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity);
-    Firebase.RTDB.setTimestamp(&fbdo, dbPath("/status/last_updated"));
+    if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/temperature"), currentTemperature)) {
+      Serial.println("Temp write failed: " + fbdo.errorReason());
+    }
+    if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity)) {
+      Serial.println("Hum write failed: " + fbdo.errorReason());
+    }
+    if (!Firebase.RTDB.setTimestamp(&fbdo, dbPath("/status/last_updated"))) {
+      Serial.println("Timestamp write failed: " + fbdo.errorReason());
+    } else {
+      Serial.println("Firebase updated successfully.");
+    }
   }
 }
 
