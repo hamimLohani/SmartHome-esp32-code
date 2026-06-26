@@ -14,6 +14,8 @@
 
 // ESP32 DevKit wiring.
 // DHT11/DHT22: VCC -> 3V3, GND -> GND, DATA -> GPIO4.
+// MQ2 gas module: VCC -> 5V, GND -> GND, AO -> GPIO34 through voltage divider, DO -> GPIO33.
+// Fire/flame module: VCC -> 3V3, GND -> GND, AO -> GPIO35, DO -> GPIO32.
 // 16x2 I2C LCD: VCC -> VIN/5V, GND -> GND, SDA -> GPIO21, SCL -> GPIO22.
 // Relay module inputs: Light 1 -> GPIO25, Light 2 -> GPIO26, Fan -> GPIO27.
 // Three cascaded SN74HC595N shift registers:
@@ -28,6 +30,10 @@
 #define PIN_SR_SER     13  // SN74HC595 SER (data)
 #define PIN_SR_SRCLK   14  // SN74HC595 SRCLK (shift clock)
 #define PIN_SR_RCLK    15  // SN74HC595 RCLK/ST_CP (latch clock)
+#define PIN_MQ2_AO     34  // MQ2 analog output
+#define PIN_MQ2_DO     33  // MQ2 digital output, active LOW on most modules
+#define PIN_FIRE_AO    35  // Flame sensor analog output
+#define PIN_FIRE_DO    32  // Flame sensor digital output, active LOW on most modules
 
 // Three SN74HC595N output mapping. Bit 0 is chip 1 Q0, bit 23 is chip 3 Q7.
 // Connect each Q output to an LED through a 220-330 ohm resistor.
@@ -62,12 +68,15 @@
 #define FIREBASE_PERIOD_MS 500UL
 #define DISPLAY_PERIOD_MS 1000UL
 #define WIFI_RETRY_PERIOD_MS 10000UL
-#define FIRMWARE_VERSION "SmartHome-DevKit-1.0.3"
+#define FIRMWARE_VERSION "SmartHome-DevKit-1.1.0"
 
 #define TEMP_LOW_LIMIT_C 20.0f
 #define TEMP_HIGH_LIMIT_C 40.0f
 #define HUM_LOW_LIMIT_PERCENT 65.0f
 #define HUM_HIGH_LIMIT_PERCENT 95.0f
+#define GAS_ALERT_PPM 800
+#define GAS_WARMUP_MS 60000UL
+#define FIRE_ANALOG_ALERT_RAW 1800
 
 const char *DB_ROOT = "/smarthome";
 
@@ -79,6 +88,13 @@ FirebaseConfig config;
 
 float currentTemperature = NAN;
 float currentHumidity = NAN;
+int currentGasRaw = 0;
+int currentGasPpm = -1;
+int currentFireRaw = 0;
+bool gasDetected = false;
+bool fireDetected = false;
+bool gasAlert = false;
+bool fireAlert = false;
 bool light1On = false;
 bool light2On = false;
 bool fanOn = false;
@@ -189,6 +205,14 @@ void setupOutputs() {
   setShiftRegister(0);
 }
 
+void setupSensors() {
+  pinMode(PIN_MQ2_DO, INPUT_PULLUP);
+  pinMode(PIN_FIRE_DO, INPUT_PULLUP);
+  analogReadResolution(12);
+  analogSetPinAttenuation(PIN_MQ2_AO, ADC_11db);
+  analogSetPinAttenuation(PIN_FIRE_AO, ADC_11db);
+}
+
 void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     return;
@@ -237,43 +261,84 @@ void publishDefaults() {
   Firebase.RTDB.setBool(&fbdo, dbPath("/controls/led1"), light1On);
   Firebase.RTDB.setBool(&fbdo, dbPath("/controls/led2"), light2On);
   Firebase.RTDB.setBool(&fbdo, dbPath("/controls/fan"), fanOn);
+  Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_raw"), currentGasRaw);
+  Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_ppm"), currentGasPpm);
+  Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/gas_detected"), gasDetected);
+  Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/fire_raw"), currentFireRaw);
+  Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/fire"), fireDetected);
+  Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/gas_alert"), gasAlert);
+  Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/fire_alert"), fireAlert);
   Firebase.RTDB.setString(&fbdo, dbPath("/status/ip"), WiFi.localIP().toString());
   Firebase.RTDB.setString(&fbdo, dbPath("/status/firmware"), FIRMWARE_VERSION);
   Firebase.RTDB.setInt(&fbdo, dbPath("/status/boot_ms"), millis());
 }
 
-void readDhtSensor() {
+void readEnvironmentSensors() {
   float temperature = dht.readTemperature();
   float humidity = dht.readHumidity();
+  bool gasWarmedUp = millis() >= GAS_WARMUP_MS;
+
+  currentGasRaw = analogRead(PIN_MQ2_AO);
+  currentGasPpm = gasWarmedUp ? map(currentGasRaw, 0, 4095, 0, 10000) : -1;
+  gasDetected = digitalRead(PIN_MQ2_DO) == LOW;
+
+  currentFireRaw = analogRead(PIN_FIRE_AO);
+  fireDetected = digitalRead(PIN_FIRE_DO) == LOW || currentFireRaw < FIRE_ANALOG_ALERT_RAW;
+  gasAlert = gasWarmedUp && (currentGasPpm > GAS_ALERT_PPM || gasDetected);
+  fireAlert = fireDetected;
 
   if (isnan(temperature) || isnan(humidity)) {
     Serial.println("DHT read failed.");
     showSensorError();
-    return;
+  } else {
+    currentTemperature = temperature;
+    currentHumidity = humidity;
+    updateEnvironmentLEDs(temperature, humidity);
   }
 
-  currentTemperature = temperature;
-  currentHumidity = humidity;
-
-  updateEnvironmentLEDs(temperature, humidity);
-
   Serial.print("Temp: ");
-  Serial.print(currentTemperature, 1);
+  if (isnan(currentTemperature)) {
+    Serial.print("--.-");
+  } else {
+    Serial.print(currentTemperature, 1);
+  }
   Serial.print(" C, Humidity: ");
-  Serial.print(currentHumidity, 0);
-  Serial.println(" %");
+  if (isnan(currentHumidity)) {
+    Serial.print("--");
+  } else {
+    Serial.print(currentHumidity, 0);
+  }
+  Serial.print(" %, Gas raw: ");
+  Serial.print(currentGasRaw);
+  Serial.print(", Gas ppm: ");
+  Serial.print(currentGasPpm);
+  Serial.print(", Gas DO: ");
+  Serial.print(gasDetected ? "ALERT" : "OK");
+  Serial.print(", Fire raw: ");
+  Serial.print(currentFireRaw);
+  Serial.print(", Fire: ");
+  Serial.println(fireDetected ? "DETECTED" : "OK");
 
   if (firebaseReady()) {
-    if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/temperature"), currentTemperature)) {
-      Serial.println("Temp write failed: " + fbdo.errorReason());
+    if (!isnan(currentTemperature) && !isnan(currentHumidity)) {
+      if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/temperature"), currentTemperature)) {
+        Serial.println("Temp write failed: " + fbdo.errorReason());
+      }
+      if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity)) {
+        Serial.println("Hum write failed: " + fbdo.errorReason());
+      }
+      Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_low"), currentTemperature < TEMP_LOW_LIMIT_C);
+      Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_high"), currentTemperature > TEMP_HIGH_LIMIT_C);
+      Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_low"), currentHumidity < HUM_LOW_LIMIT_PERCENT);
+      Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_high"), currentHumidity > HUM_HIGH_LIMIT_PERCENT);
     }
-    if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity)) {
-      Serial.println("Hum write failed: " + fbdo.errorReason());
-    }
-    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_low"), currentTemperature < TEMP_LOW_LIMIT_C);
-    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_high"), currentTemperature > TEMP_HIGH_LIMIT_C);
-    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_low"), currentHumidity < HUM_LOW_LIMIT_PERCENT);
-    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_high"), currentHumidity > HUM_HIGH_LIMIT_PERCENT);
+    Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_raw"), currentGasRaw);
+    Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_ppm"), currentGasPpm);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/gas_detected"), gasDetected);
+    Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/fire_raw"), currentFireRaw);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/fire"), fireDetected);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/gas_alert"), gasAlert);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/fire_alert"), fireAlert);
     if (!Firebase.RTDB.setTimestamp(&fbdo, dbPath("/status/last_updated"))) {
       Serial.println("Timestamp write failed: " + fbdo.errorReason());
     } else {
@@ -317,14 +382,13 @@ void updateDisplay() {
   lcd.print(line);
 
   lcd.setCursor(0, 1);
-  snprintf(
-    line,
-    sizeof(line),
-    "L1:%s L2:%s F:%s",
-    light1On ? "1" : "0",
-    light2On ? "1" : "0",
-    fanOn ? "1" : "0"
-  );
+  if (fireAlert) {
+    snprintf(line, sizeof(line), "FIRE! G:%4d   ", currentGasPpm);
+  } else if (gasAlert) {
+    snprintf(line, sizeof(line), "GAS! %4d ppm  ", currentGasPpm);
+  } else {
+    snprintf(line, sizeof(line), "Gas:%4d F:%s  ", currentGasPpm, fireDetected ? "Y" : "N");
+  }
   lcd.print(line);
 }
 
@@ -349,6 +413,7 @@ void setup() {
   delay(100);
 
   dht.begin();
+  setupSensors();
   setupLcd();
   connectWiFi();
   setupFirebase();
@@ -362,7 +427,7 @@ void loop() {
 
   if (now - lastSensorMs >= SENSOR_PERIOD_MS) {
     lastSensorMs = now;
-    readDhtSensor();
+    readEnvironmentSensors();
   }
 
   if (now - lastFirebaseMs >= FIREBASE_PERIOD_MS) {

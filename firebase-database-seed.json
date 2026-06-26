@@ -8,7 +8,10 @@
     "sensors": {
       "temperature": 0,
       "humidity": 0,
+      "gas_raw": 0,
       "gas_ppm": -1,
+      "gas_detected": false,
+      "fire_raw": 0,
       "fire": false
     },
     "alerts": {
@@ -25,7 +28,7 @@
     "status": {
       "boot_ms": 0,
       "ip": "",
-      "firmware": "SmartHome-DevKit-1.0.3",
+      "firmware": "SmartHome-DevKit-1.1.0",
       "last_updated": 0
     }
   }

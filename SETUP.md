@@ -33,6 +33,10 @@ Open `SmartHome-esp32-code.ino`, then set:
 For a focused LED-only guide, see `LED_SETUP.md`.
 
 - DHT data: `GPIO4`
+- MQ2 gas sensor AO: `GPIO34`
+- MQ2 gas sensor DO: `GPIO33`
+- Fire/flame sensor AO: `GPIO35`
+- Fire/flame sensor DO: `GPIO32`
 - 16x2 I2C LCD SDA: `GPIO21`
 - 16x2 I2C LCD SCL: `GPIO22`
 - Light 1 relay input: `GPIO25`
@@ -49,6 +53,30 @@ For a focused LED-only guide, see `LED_SETUP.md`.
 - Chip 2 Q7S / QH' / pin 9: Chip 3 SER / DS / pin 14
 
 The sketch assumes a common active-low relay module, where `LOW` turns the relay ON and `HIGH` turns it OFF.
+
+## 4. Gas and fire sensor wiring
+
+Both modules usually have four pins: `VCC`, `GND`, `AO`, and `DO`.
+
+| Module pin | MQ2 gas sensor connection |
+| --- | --- |
+| `VCC` | `5V` |
+| `GND` | `GND` |
+| `AO` | `GPIO34` through a voltage divider |
+| `DO` | `GPIO33` |
+
+Use a voltage divider on MQ2 `AO` because many MQ2 modules output up to `5V`, while ESP32 pins must stay at or below `3.3V`. A simple divider is `10k` from MQ2 `AO` to `GPIO34`, and `20k` from `GPIO34` to `GND`. If your MQ2 `DO` pin outputs `5V`, use the same divider or a level shifter before `GPIO33`.
+
+| Module pin | Fire/flame sensor connection |
+| --- | --- |
+| `VCC` | `3V3` |
+| `GND` | `GND` |
+| `AO` | `GPIO35` |
+| `DO` | `GPIO32` |
+
+Most MQ2 and fire modules have active-low `DO`, so `LOW` means detected. The sketch also reads both analog pins and publishes raw values to Firebase.
+
+## 5. LED shift-register outputs
 
 Place the three `SN74HC595N` chips vertically on the breadboard with two empty rows between each chip, matching the screenshot layout. Connect each shift-register output to an LED through a `220-330 ohm` resistor:
 
@@ -77,7 +105,7 @@ Place the three `SN74HC595N` chips vertically on the breadboard with two empty r
 | Chip 3 Q4 | Last DHT read failed |
 | Chip 3 Q5-Q7 | Spare |
 
-## 4. Firebase Realtime Database setup
+## 6. Firebase Realtime Database setup
 
 1. Go to `https://console.firebase.google.com`.
 2. Create a project.
@@ -92,7 +120,7 @@ Place the three `SN74HC595N` chips vertically on the breadboard with two empty r
 
 These rules are open for beginner testing. Do not use them for a public product.
 
-## 5. Get Firebase values for the sketch
+## 7. Get Firebase values for the sketch
 
 In `SmartHome-esp32-code.ino`, replace:
 
@@ -120,7 +148,7 @@ For `FIREBASE_AUTH`, use your Realtime Database legacy database secret:
 
 If Firebase does not show `Database secrets`, ask me to convert the sketch to email/password Firebase authentication.
 
-## 6. Compile from terminal
+## 8. Compile from terminal
 
 This command compiled successfully on this machine:
 
@@ -128,7 +156,7 @@ This command compiled successfully on this machine:
 arduino-cli compile --fqbn esp32:esp32:esp32 .
 ```
 
-## 7. Upload from Arduino IDE
+## 9. Upload from Arduino IDE
 
 1. Connect the ESP32 DevKit by USB.
 2. Select `Tools > Board > esp32 > ESP32 Dev Module`.
@@ -144,7 +172,7 @@ A fatal error occurred: This chip is ESP32, not ESP32-S3. Wrong chip argument?
 
 change the selected board to `ESP32 Dev Module`, then upload again.
 
-## 8. Upload from terminal
+## 10. Upload from terminal
 
 List connected ports:
 

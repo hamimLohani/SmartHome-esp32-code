@@ -37,9 +37,21 @@
           ".write": true,
           ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 10000"
         },
+        "gas_raw": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 4095"
+        },
+        "gas_detected": {
+          ".write": true,
+          ".validate": "newData.isBoolean()"
+        },
         "fire": {
           ".write": true,
           ".validate": "newData.isBoolean()"
+        },
+        "fire_raw": {
+          ".write": true,
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 4095"
         },
         "$other": {
           ".validate": false
