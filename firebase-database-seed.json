@@ -25,7 +25,7 @@
     "status": {
       "boot_ms": 0,
       "ip": "",
-      "firmware": "SmartHome-1.0.0",
+      "firmware": "SmartHome-DevKit-1.0.3",
       "last_updated": 0
     }
   }

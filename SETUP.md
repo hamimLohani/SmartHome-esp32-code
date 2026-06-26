@@ -20,7 +20,7 @@ Install these libraries from `Tools > Manage Libraries`:
 
 ## 2. Board settings
 
-Open `SmartHome.ino`, then set:
+Open `SmartHome-esp32-code.ino`, then set:
 
 - Board: `ESP32 Dev Module`
 - CPU Frequency: `240MHz`
@@ -30,14 +30,52 @@ Open `SmartHome.ino`, then set:
 
 ## 3. Wiring
 
+For a focused LED-only guide, see `LED_SETUP.md`.
+
 - DHT data: `GPIO4`
 - 16x2 I2C LCD SDA: `GPIO21`
 - 16x2 I2C LCD SCL: `GPIO22`
 - Light 1 relay input: `GPIO25`
 - Light 2 relay input: `GPIO26`
 - Fan relay input: `GPIO27`
+- Chip 1 SN74HC595N SER / DS / pin 14: `GPIO13`
+- All SN74HC595N SRCLK / SH_CP / pin 11: `GPIO14`
+- All SN74HC595N RCLK / ST_CP / pin 12: `GPIO15`
+- Every SN74HC595N OE / pin 13: `GND`
+- Every SN74HC595N MR / SRCLR / pin 10: `3V3`
+- Every SN74HC595N VCC / pin 16: `3V3`
+- Every SN74HC595N GND / pin 8: `GND`
+- Chip 1 Q7S / QH' / pin 9: Chip 2 SER / DS / pin 14
+- Chip 2 Q7S / QH' / pin 9: Chip 3 SER / DS / pin 14
 
 The sketch assumes a common active-low relay module, where `LOW` turns the relay ON and `HIGH` turns it OFF.
+
+Place the three `SN74HC595N` chips vertically on the breadboard with two empty rows between each chip, matching the screenshot layout. Connect each shift-register output to an LED through a `220-330 ohm` resistor:
+
+| Output | Meaning |
+| --- | --- |
+| Chip 1 Q0 | Temperature low, below `20 C` |
+| Chip 1 Q1 | Temperature high, above `40 C` |
+| Chip 1 Q2 | Temperature bar `20 C` |
+| Chip 1 Q3 | Temperature bar `22 C` |
+| Chip 1 Q4 | Temperature bar `24 C` |
+| Chip 1 Q5 | Temperature bar `26 C` |
+| Chip 1 Q6 | Temperature bar `28 C` |
+| Chip 1 Q7 | Temperature bar `30 C` |
+| Chip 2 Q0 | Temperature bar `32 C` |
+| Chip 2 Q1 | Temperature bar `34 C` |
+| Chip 2 Q2 | Temperature bar `36 C` |
+| Chip 2 Q3 | Temperature bar `38 C` |
+| Chip 2 Q4 | Humidity low, below `65 %` |
+| Chip 2 Q5 | Humidity high, above `95 %` |
+| Chip 2 Q6 | Humidity bar `65 %` |
+| Chip 2 Q7 | Humidity bar `70 %` |
+| Chip 3 Q0 | Humidity bar `75 %` |
+| Chip 3 Q1 | Humidity bar `80 %` |
+| Chip 3 Q2 | Humidity bar `85 %` |
+| Chip 3 Q3 | Last DHT read OK |
+| Chip 3 Q4 | Last DHT read failed |
+| Chip 3 Q5-Q7 | Spare |
 
 ## 4. Firebase Realtime Database setup
 
@@ -56,7 +94,7 @@ These rules are open for beginner testing. Do not use them for a public product.
 
 ## 5. Get Firebase values for the sketch
 
-In `SmartHome.ino`, replace:
+In `SmartHome-esp32-code.ino`, replace:
 
 ```cpp
 #define WIFI_SSID      "YOUR_WIFI_SSID"
@@ -87,15 +125,48 @@ If Firebase does not show `Database secrets`, ask me to convert the sketch to em
 This command compiled successfully on this machine:
 
 ```sh
-arduino-cli compile --fqbn esp32:esp32:esp32 SmartHome.ino
+arduino-cli compile --fqbn esp32:esp32:esp32 .
 ```
 
 ## 7. Upload from Arduino IDE
 
 1. Connect the ESP32 DevKit by USB.
-2. Select the correct port from `Tools > Port`.
-3. Click Upload.
-4. Open Serial Monitor at `115200 baud`.
+2. Select `Tools > Board > esp32 > ESP32 Dev Module`.
+3. Select the correct port from `Tools > Port`.
+4. Click Upload.
+5. Open Serial Monitor at `115200 baud`.
+
+Do not select an `ESP32-S3` board for this hardware. If upload fails with:
+
+```text
+A fatal error occurred: This chip is ESP32, not ESP32-S3. Wrong chip argument?
+```
+
+change the selected board to `ESP32 Dev Module`, then upload again.
+
+## 8. Upload from terminal
+
+List connected ports:
+
+```sh
+arduino-cli board list
+```
+
+Upload with the ESP32 board target:
+
+```sh
+arduino-cli upload -p /dev/cu.usbserial-XXXX --fqbn esp32:esp32:esp32 .
+```
+
+Replace `/dev/cu.usbserial-XXXX` with the port shown by `arduino-cli board list`.
+
+Or use the repo helper:
+
+```sh
+./esp_upload.sh /dev/cu.usbserial-XXXX
+```
+
+The helper defaults to `esp32:esp32:esp32`. Do not use `esp32:esp32:esp32s3` for this board.
 
 After boot:
 

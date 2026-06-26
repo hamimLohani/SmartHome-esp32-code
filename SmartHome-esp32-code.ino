@@ -13,10 +13,12 @@
 #define FIREBASE_AUTH  "mFawsZRgC0dEaQE1VcIyBQeTHV1TVzZlmnNF448Q"
 
 // ESP32 DevKit wiring.
-// DHT11/DHT22: VCC → 3V3, GND → GND, DATA → GPIO4.
-// 16x2 I2C LCD: VCC → VIN/5V, GND → GND, SDA → GPIO21, SCL → GPIO22.
-// Relay module inputs: Light 1 → GPIO25, Light 2 → GPIO26, Fan → GPIO27.
-// SN74HC595N shift register: SER → GPIO13, SRCLK → GPIO14, RCLK → GPIO12.
+// DHT11/DHT22: VCC -> 3V3, GND -> GND, DATA -> GPIO4.
+// 16x2 I2C LCD: VCC -> VIN/5V, GND -> GND, SDA -> GPIO21, SCL -> GPIO22.
+// Relay module inputs: Light 1 -> GPIO25, Light 2 -> GPIO26, Fan -> GPIO27.
+// Three cascaded SN74HC595N shift registers:
+// SER/DS -> GPIO13, SRCLK/SH_CP -> GPIO14, RCLK/ST_CP -> GPIO15.
+// Tie every OE pin to GND, every MR/SRCLR pin to 3V3, VCC to 3V3, and GND to GND.
 #define PIN_DHT        4
 #define PIN_RELAY_L1   25
 #define PIN_RELAY_L2   26
@@ -25,29 +27,31 @@
 #define PIN_I2C_SCL    22
 #define PIN_SR_SER     13  // SN74HC595 SER (data)
 #define PIN_SR_SRCLK   14  // SN74HC595 SRCLK (shift clock)
-#define PIN_SR_RCLK    12  // SN74HC595 RCLK (latch clock)
+#define PIN_SR_RCLK    15  // SN74HC595 RCLK/ST_CP (latch clock)
 
-// SN74HC595 output mapping:
-// Q0: TEMP_LOW, Q1: TEMP_HIGH, Q2-Q11: TBAR_1-10, Q12: HUM_LOW, Q13: HUM_HIGH, Q14-Q18: HBAR_1-5
-#define SR_TEMP_LOW    (1 << 0)
-#define SR_TEMP_HIGH   (1 << 1)
-#define SR_TBAR_1      (1 << 2)
-#define SR_TBAR_2      (1 << 3)
-#define SR_TBAR_3      (1 << 4)
-#define SR_TBAR_4      (1 << 5)
-#define SR_TBAR_5      (1 << 6)
-#define SR_TBAR_6      (1 << 7)
-#define SR_TBAR_7      (1 << 8)
-#define SR_TBAR_8      (1 << 9)
-#define SR_TBAR_9      (1 << 10)
-#define SR_TBAR_10     (1 << 11)
-#define SR_HUM_LOW     (1 << 12)
-#define SR_HUM_HIGH    (1 << 13)
-#define SR_HBAR_1      (1 << 14)
-#define SR_HBAR_2      (1 << 15)
-#define SR_HBAR_3      (1 << 16)
-#define SR_HBAR_4      (1 << 17)
-#define SR_HBAR_5      (1 << 18)
+// Three SN74HC595N output mapping. Bit 0 is chip 1 Q0, bit 23 is chip 3 Q7.
+// Connect each Q output to an LED through a 220-330 ohm resistor.
+#define SR_TEMP_LOW     (1UL << 0)   // Chip 1 Q0: temperature < 20 C
+#define SR_TEMP_HIGH    (1UL << 1)   // Chip 1 Q1: temperature > 40 C
+#define SR_TBAR_1       (1UL << 2)   // Chip 1 Q2: 20 C
+#define SR_TBAR_2       (1UL << 3)   // Chip 1 Q3: 22 C
+#define SR_TBAR_3       (1UL << 4)   // Chip 1 Q4: 24 C
+#define SR_TBAR_4       (1UL << 5)   // Chip 1 Q5: 26 C
+#define SR_TBAR_5       (1UL << 6)   // Chip 1 Q6: 28 C
+#define SR_TBAR_6       (1UL << 7)   // Chip 1 Q7: 30 C
+#define SR_TBAR_7       (1UL << 8)   // Chip 2 Q0: 32 C
+#define SR_TBAR_8       (1UL << 9)   // Chip 2 Q1: 34 C
+#define SR_TBAR_9       (1UL << 10)  // Chip 2 Q2: 36 C
+#define SR_TBAR_10      (1UL << 11)  // Chip 2 Q3: 38 C
+#define SR_HUM_LOW      (1UL << 12)  // Chip 2 Q4: humidity < 65 %
+#define SR_HUM_HIGH     (1UL << 13)  // Chip 2 Q5: humidity > 95 %
+#define SR_HBAR_1       (1UL << 14)  // Chip 2 Q6: 65 %
+#define SR_HBAR_2       (1UL << 15)  // Chip 2 Q7: 70 %
+#define SR_HBAR_3       (1UL << 16)  // Chip 3 Q0: 75 %
+#define SR_HBAR_4       (1UL << 17)  // Chip 3 Q1: 80 %
+#define SR_HBAR_5       (1UL << 18)  // Chip 3 Q2: 85 %
+#define SR_SENSOR_OK    (1UL << 19)  // Chip 3 Q3: last DHT read succeeded
+#define SR_SENSOR_ERROR (1UL << 20)  // Chip 3 Q4: last DHT read failed
 
 #define DHTTYPE DHT11
 #define LCD_ADDRESS 0x27
@@ -58,7 +62,12 @@
 #define FIREBASE_PERIOD_MS 500UL
 #define DISPLAY_PERIOD_MS 1000UL
 #define WIFI_RETRY_PERIOD_MS 10000UL
-#define FIRMWARE_VERSION "SmartHome-DevKit-1.0.0"
+#define FIRMWARE_VERSION "SmartHome-DevKit-1.0.3"
+
+#define TEMP_LOW_LIMIT_C 20.0f
+#define TEMP_HIGH_LIMIT_C 40.0f
+#define HUM_LOW_LIMIT_PERCENT 65.0f
+#define HUM_HIGH_LIMIT_PERCENT 95.0f
 
 const char *DB_ROOT = "/smarthome";
 
@@ -77,20 +86,27 @@ unsigned long lastSensorMs = 0;
 unsigned long lastFirebaseMs = 0;
 unsigned long lastDisplayMs = 0;
 unsigned long lastWifiRetryMs = 0;
-uint32_t srData = 0;  // Current shift register data
+uint32_t srData = 0;
 
 String dbPath(const char *suffix) {
   return String(DB_ROOT) + suffix;
 }
 
 void writeShiftRegister() {
+  uint8_t chip1 = srData & 0xFF;
+  uint8_t chip2 = (srData >> 8) & 0xFF;
+  uint8_t chip3 = (srData >> 16) & 0xFF;
+
   digitalWrite(PIN_SR_RCLK, LOW);
-  for (int i = 23; i >= 0; i--) {  // Send 24 bits (3 bytes)
-    digitalWrite(PIN_SR_SER, (srData >> i) & 1);
-    digitalWrite(PIN_SR_SRCLK, HIGH);
-    digitalWrite(PIN_SR_SRCLK, LOW);
-  }
+  shiftOut(PIN_SR_SER, PIN_SR_SRCLK, MSBFIRST, chip3);
+  shiftOut(PIN_SR_SER, PIN_SR_SRCLK, MSBFIRST, chip2);
+  shiftOut(PIN_SR_SER, PIN_SR_SRCLK, MSBFIRST, chip1);
   digitalWrite(PIN_SR_RCLK, HIGH);
+}
+
+void setShiftRegister(uint32_t value) {
+  srData = value;
+  writeShiftRegister();
 }
 
 bool firebaseReady() {
@@ -108,54 +124,51 @@ void applyOutputs() {
   writeRelay(PIN_RELAY_FAN, fanOn);
 }
 
-void updateTempLEDs(float temperature) {
-  bool low = temperature < 20.0f;
-  bool high = temperature > 40.0f;
-  
-  // Clear temperature-related bits
-  srData &= ~(SR_TEMP_LOW | SR_TEMP_HIGH | 
-              SR_TBAR_1 | SR_TBAR_2 | SR_TBAR_3 | SR_TBAR_4 | SR_TBAR_5 |
-              SR_TBAR_6 | SR_TBAR_7 | SR_TBAR_8 | SR_TBAR_9 | SR_TBAR_10);
-  
-  // Set temperature indicator bits
-  if (low) srData |= SR_TEMP_LOW;
-  if (high) srData |= SR_TEMP_HIGH;
-  
-  // Set temperature bar graph bits
-  const uint32_t tbarBits[] = { SR_TBAR_1, SR_TBAR_2, SR_TBAR_3, SR_TBAR_4, SR_TBAR_5,
-                               SR_TBAR_6, SR_TBAR_7, SR_TBAR_8, SR_TBAR_9, SR_TBAR_10 };
-  for (int i = 0; i < 10; i++) {
-    float threshold = 20.0f + (i * 2.0f);
-    if (temperature >= threshold) {
-      srData |= tbarBits[i];
-    }
-  }
-  
-  writeShiftRegister();
+void showSensorError() {
+  setShiftRegister(SR_SENSOR_ERROR);
 }
 
-void updateHumidityLEDs(float humidity) {
-  bool low = humidity < 60.0f;
-  bool high = humidity > 80.0f;
-  
-  // Clear humidity-related bits
-  srData &= ~(SR_HUM_LOW | SR_HUM_HIGH | 
-              SR_HBAR_1 | SR_HBAR_2 | SR_HBAR_3 | SR_HBAR_4 | SR_HBAR_5);
-  
-  // Set humidity indicator bits
-  if (low) srData |= SR_HUM_LOW;
-  if (high) srData |= SR_HUM_HIGH;
-  
-  // Set humidity bar graph bits
-  const uint32_t hbarBits[] = { SR_HBAR_1, SR_HBAR_2, SR_HBAR_3, SR_HBAR_4, SR_HBAR_5 };
-  for (int i = 0; i < 5; i++) {
-    float threshold = 60.0f + (i * 4.0f);
-    if (humidity >= threshold) {
-      srData |= hbarBits[i];
+void updateEnvironmentLEDs(float temperature, float humidity) {
+  bool tempLow = temperature < TEMP_LOW_LIMIT_C;
+  bool tempHigh = temperature > TEMP_HIGH_LIMIT_C;
+  bool humLow = humidity < HUM_LOW_LIMIT_PERCENT;
+  bool humHigh = humidity > HUM_HIGH_LIMIT_PERCENT;
+  uint32_t nextData = SR_SENSOR_OK;
+  const uint32_t tempBarBits[] = {
+    SR_TBAR_1, SR_TBAR_2, SR_TBAR_3, SR_TBAR_4, SR_TBAR_5,
+    SR_TBAR_6, SR_TBAR_7, SR_TBAR_8, SR_TBAR_9, SR_TBAR_10
+  };
+  const uint32_t humBarBits[] = {
+    SR_HBAR_1, SR_HBAR_2, SR_HBAR_3, SR_HBAR_4, SR_HBAR_5
+  };
+
+  if (tempLow) {
+    nextData |= SR_TEMP_LOW;
+  } else if (tempHigh) {
+    nextData |= SR_TEMP_HIGH;
+  }
+
+  if (humLow) {
+    nextData |= SR_HUM_LOW;
+  } else if (humHigh) {
+    nextData |= SR_HUM_HIGH;
+  }
+
+  for (int i = 0; i < 10; i++) {
+    float threshold = TEMP_LOW_LIMIT_C + (i * 2.0f);
+    if (temperature >= threshold) {
+      nextData |= tempBarBits[i];
     }
   }
-  
-  writeShiftRegister();
+
+  for (int i = 0; i < 5; i++) {
+    float threshold = HUM_LOW_LIMIT_PERCENT + (i * 5.0f);
+    if (humidity >= threshold) {
+      nextData |= humBarBits[i];
+    }
+  }
+
+  setShiftRegister(nextData);
 }
 
 void setupOutputs() {
@@ -172,9 +185,8 @@ void setupOutputs() {
   light1On = false;
   light2On = false;
   fanOn = false;
-  srData = 0;  // Clear all LEDs
   applyOutputs();
-  writeShiftRegister();
+  setShiftRegister(0);
 }
 
 void connectWiFi() {
@@ -236,15 +248,14 @@ void readDhtSensor() {
 
   if (isnan(temperature) || isnan(humidity)) {
     Serial.println("DHT read failed.");
+    showSensorError();
     return;
   }
 
   currentTemperature = temperature;
   currentHumidity = humidity;
 
-  // Update LEDs via shift register
-  updateTempLEDs(temperature);
-  updateHumidityLEDs(humidity);
+  updateEnvironmentLEDs(temperature, humidity);
 
   Serial.print("Temp: ");
   Serial.print(currentTemperature, 1);
@@ -259,6 +270,10 @@ void readDhtSensor() {
     if (!Firebase.RTDB.setFloat(&fbdo, dbPath("/sensors/humidity"), currentHumidity)) {
       Serial.println("Hum write failed: " + fbdo.errorReason());
     }
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_low"), currentTemperature < TEMP_LOW_LIMIT_C);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/temp_high"), currentTemperature > TEMP_HIGH_LIMIT_C);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_low"), currentHumidity < HUM_LOW_LIMIT_PERCENT);
+    Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_high"), currentHumidity > HUM_HIGH_LIMIT_PERCENT);
     if (!Firebase.RTDB.setTimestamp(&fbdo, dbPath("/status/last_updated"))) {
       Serial.println("Timestamp write failed: " + fbdo.errorReason());
     } else {
