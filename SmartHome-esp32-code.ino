@@ -75,7 +75,7 @@
 #define HUM_LOW_LIMIT_PERCENT 65.0f
 #define HUM_HIGH_LIMIT_PERCENT 95.0f
 #define GAS_ALERT_PPM 800
-#define GAS_WARMUP_MS 60000UL
+#define GAS_WARMUP_MS 120000UL
 #define FIRE_ANALOG_ALERT_RAW 1800
 
 const char *DB_ROOT = "/smarthome";
@@ -262,7 +262,6 @@ void publishDefaults() {
   Firebase.RTDB.setBool(&fbdo, dbPath("/controls/led2"), light2On);
   Firebase.RTDB.setBool(&fbdo, dbPath("/controls/fan"), fanOn);
   Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_raw"), currentGasRaw);
-  Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_ppm"), currentGasPpm);
   Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/gas_detected"), gasDetected);
   Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/fire_raw"), currentFireRaw);
   Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/fire"), fireDetected);
@@ -333,7 +332,9 @@ void readEnvironmentSensors() {
       Firebase.RTDB.setBool(&fbdo, dbPath("/alerts/hum_high"), currentHumidity > HUM_HIGH_LIMIT_PERCENT);
     }
     Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_raw"), currentGasRaw);
-    Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_ppm"), currentGasPpm);
+    if (gasWarmedUp) {
+      Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/gas_ppm"), currentGasPpm);
+    }
     Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/gas_detected"), gasDetected);
     Firebase.RTDB.setInt(&fbdo, dbPath("/sensors/fire_raw"), currentFireRaw);
     Firebase.RTDB.setBool(&fbdo, dbPath("/sensors/fire"), fireDetected);
